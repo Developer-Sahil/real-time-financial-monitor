@@ -60,8 +60,8 @@
                 <h1 class="text-2xl md:text-3xl font-bold text-slate-100">RFD Monitor</h1>
             </div>
             <div id="status-indicator" class="flex items-center gap-2">
-                <span class="text-sm text-slate-400">LIVE</span>
-                <div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                <span id="status-text" class="text-sm text-slate-400">CONNECTING...</span>
+                <div id="status-dot" class="w-3 h-3 bg-yellow-500 rounded-full animate-pulse"></div>
             </div>
         </header>
 
@@ -148,6 +148,8 @@
             const setAlertBtn = document.getElementById('set-alert-btn');
             const clearAlertBtn = document.getElementById('clear-alert-btn');
             const alertLog = document.getElementById('alert-log');
+            const statusText = document.getElementById('status-text');
+            const statusDot = document.getElementById('status-dot');
 
             // --- State Variables ---
             let chartInstance;
@@ -155,37 +157,34 @@
             let alertPrice = null;
             let lastPrice = 0; // To track direction
             const MAX_DATA_POINTS = 30; // Max points on the chart
-
-            // --- Mock Backend Data Store ---
-            // This object simulates a persistent backend data source.
-            const mockAssetData = {
-                'BTC-USD': { base: 68000, volatility: 0.001 },
-                'ETH-USD': { base: 3500, volatility: 0.0015 },
-                'AAPL': { base: 190, volatility: 0.002 },
-                'GOOGL': { base: 175, volatility: 0.0018 },
-                'XAU-USD': { base: 2300, volatility: 0.0005 },
-                'WTI-USD': { base: 80, volatility: 0.0025 }
-            };
             
-            // --- MOCK BACKEND API ---
-            // This function simulates fetching data from a Python/FastAPI backend.
-            // In a real app, this would be a `fetch('/api/price/...')` call.
-            function fetchMockPrice(assetId) {
-                const asset = mockAssetData[assetId];
-                if (!asset.currentPrice) {
-                    asset.currentPrice = asset.base; // Initialize price
-                }
-                
-                // Generate a realistic random price fluctuation
-                const changePercent = (Math.random() - 0.49) * asset.volatility;
-                const change = asset.currentPrice * changePercent;
-                asset.currentPrice += change;
+            // --- LIVE BACKEND API ---
+            // This function fetches data from your deployed Python/FastAPI backend.
+            const API_BASE_URL = 'https://real-time-financial-monitor.onrender.com';
 
-                return {
-                    assetId: assetId,
-                    price: asset.currentPrice,
-                    timestamp: new Date()
-                };
+            async function fetchRealPrice(assetId) {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/price/${assetId}`);
+                    if (!response.ok) {
+                        console.error('Server error:', response.status, await response.text());
+                        statusText.textContent = 'ERROR';
+                        statusDot.className = 'w-3 h-3 bg-red-500 rounded-full';
+                        return null;
+                    }
+                    const data = await response.json();
+                    // Convert Python timestamp (seconds) to JS Date object (milliseconds)
+                    data.timestamp = new Date(data.timestamp * 1000);
+                    
+                    statusText.textContent = 'LIVE';
+                    statusDot.className = 'w-3 h-3 bg-green-500 rounded-full animate-pulse';
+                    return data;
+
+                } catch (error) {
+                    console.error('Network error:', error);
+                    statusText.textContent = 'OFFLINE';
+                    statusDot.className = 'w-3 h-3 bg-gray-500 rounded-full';
+                    return null;
+                }
             }
 
             // --- Chart.js Initialization ---
@@ -244,24 +243,28 @@
 
             // --- UI Update Functions ---
             function updateUI(data) {
+                if (!data) return; // Don't update if data fetch failed
+
                 // Update Price Card
                 const price = data.price;
                 currentPriceEl.textContent = `$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                 lastUpdatedEl.textContent = data.timestamp.toLocaleTimeString();
 
                 // Update Price Change Indicator
-                if (price > lastPrice) {
-                    priceChangeIndicator.textContent = '▲';
-                    priceChangeIndicator.className = 'px-2 py-1 text-sm font-semibold rounded text-green-400 bg-green-900/50';
-                    priceCard.style.borderColor = '#4ade80'; // green-400
-                } else if (price < lastPrice) {
-                    priceChangeIndicator.textContent = '▼';
-                    priceChangeIndicator.className = 'px-2 py-1 text-sm font-semibold rounded text-red-400 bg-red-900/50';
-                    priceCard.style.borderColor = '#f87171'; // red-400
-                } else {
-                     priceChangeIndicator.textContent = '-';
-                     priceChangeIndicator.className = 'px-2 py-1 text-sm font-semibold rounded text-slate-400 bg-slate-700';
-                     priceCard.style.borderColor = 'transparent';
+                if (lastPrice !== 0) { // Avoid indicator on first load
+                    if (price > lastPrice) {
+                        priceChangeIndicator.textContent = '▲';
+                        priceChangeIndicator.className = 'px-2 py-1 text-sm font-semibold rounded text-green-400 bg-green-900/50';
+                        priceCard.style.borderColor = '#4ade80'; // green-400
+                    } else if (price < lastPrice) {
+                        priceChangeIndicator.textContent = '▼';
+                        priceChangeIndicator.className = 'px-2 py-1 text-sm font-semibold rounded text-red-400 bg-red-900/50';
+                        priceCard.style.borderColor = '#f87171'; // red-400
+                    } else {
+                         priceChangeIndicator.textContent = '-';
+                         priceChangeIndicator.className = 'px-2 py-1 text-sm font-semibold rounded text-slate-400 bg-slate-700';
+                         priceCard.style.borderColor = 'transparent';
+                    }
                 }
                 
                 // Update chart
@@ -284,7 +287,7 @@
                 chartInstance.update();
             }
             
-            function resetUIForNewAsset() {
+            async function resetUIForNewAsset() {
                 // Clear chart data
                 chartInstance.data.labels = [];
                 chartInstance.data.datasets[0].data = [];
@@ -292,13 +295,14 @@
 
                 // Reset last price to avoid a large initial jump indicator
                 lastPrice = 0; 
+                priceChangeIndicator.textContent = '';
+                priceChangeIndicator.className = 'px-2 py-1 text-sm font-semibold rounded';
                 
                 // Update asset name in UI
                 currentAssetNameEl.textContent = assetSelect.options[assetSelect.selectedIndex].text;
 
                 // Fetch initial data immediately
-                const initialData = fetchMockPrice(currentAsset);
-                lastPrice = initialData.price; // Set initial price
+                const initialData = await fetchRealPrice(currentAsset);
                 updateUI(initialData);
             }
 
@@ -327,7 +331,7 @@
             }
 
             function checkAlert(currentPrice) {
-                if (alertPrice === null) return;
+                if (alertPrice === null || lastPrice === 0) return;
 
                 // Trigger if price crosses the alert threshold
                 if ((lastPrice < alertPrice && currentPrice >= alertPrice) || 
@@ -391,12 +395,12 @@
             });
 
             // --- Main Application Loop ---
-            function startMonitoring() {
+            async function startMonitoring() {
                 initializeChart();
-                resetUIForNewAsset();
+                await resetUIForNewAsset();
                 
-                setInterval(() => {
-                    const data = fetchMockPrice(currentAsset);
+                setInterval(async () => {
+                    const data = await fetchRealPrice(currentAsset);
                     updateUI(data);
                 }, 2000); // Fetch new data every 2 seconds
             }

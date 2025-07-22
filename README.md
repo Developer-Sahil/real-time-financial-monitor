@@ -2,6 +2,9 @@
 
 This project is a full-stack financial data dashboard that fetches, visualizes, and alerts users based on asset price movements.
 
+## 🌐 Live Demo
+[View the Live Project](https://thunderous-figolla-0fe5f4.netlify.app/)
+
 ## Files Included
 
 - `rfd-monitor.html`: The frontend application. It's a single, self-contained file with HTML, Tailwind CSS (via CDN), and JavaScript. It simulates a backend for immediate use.

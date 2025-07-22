@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Financial Data Monitor</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js for data visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    
+    <!-- Tone.js for audio alerts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+
+    <style>
+        /* Use Inter font family */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* slate-900 */
+        }
+        /* Custom scrollbar for a better look in dark mode */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b; /* slate-800 */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569; /* slate-600 */
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b; /* slate-500 */
+        }
+        /* Simple flashing animation for alerts */
+        @keyframes flash {
+            0%, 100% { background-color: #dc2626; } /* red-600 */
+            50% { background-color: #f87171; } /* red-400 */
+        }
+        .alert-flash {
+            animation: flash 1.5s ease-in-out;
+        }
+    </style>
+</head>
+<body class="text-white antialiased">
+
+    <div class="container mx-auto p-4 md:p-6 lg:p-8">
+
+        <!-- Header -->
+        <header class="flex items-center justify-between pb-6 border-b border-slate-700">
+            <div class="flex items-center gap-3">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-sky-400"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                <h1 class="text-2xl md:text-3xl font-bold text-slate-100">RFD Monitor</h1>
+            </div>
+            <div id="status-indicator" class="flex items-center gap-2">
+                <span class="text-sm text-slate-400">LIVE</span>
+                <div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+            </div>
+        </header>
+
+        <main class="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <!-- Left Column: Controls and Current Price -->
+            <div class="lg:col-span-1 flex flex-col gap-6">
+                
+                <!-- Asset Selector -->
+                <div class="bg-slate-800 p-4 rounded-lg shadow-lg">
+                    <label for="asset-select" class="block text-sm font-medium text-slate-400 mb-2">Select Asset</label>
+                    <select id="asset-select" class="w-full bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500">
+                        <option value="BTC-USD">Bitcoin (BTC-USD)</option>
+                        <option value="ETH-USD">Ethereum (ETH-USD)</option>
+                        <option value="AAPL">Apple Inc. (AAPL)</option>
+                        <option value="GOOGL">Alphabet Inc. (GOOGL)</option>
+                        <option value="XAU-USD">Gold (XAU-USD)</option>
+                        <option value="WTI-USD">Crude Oil (WTI)</option>
+                    </select>
+                </div>
+
+                <!-- Current Price Display -->
+                <div id="price-card" class="bg-slate-800 p-6 rounded-lg shadow-lg transition-all duration-300">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p id="current-asset-name" class="text-lg font-bold text-slate-200">Bitcoin (BTC-USD)</p>
+                            <p class="text-sm text-slate-400">Real-Time Price</p>
+                        </div>
+                        <div id="price-change-indicator" class="px-2 py-1 text-sm font-semibold rounded transition-colors duration-300">
+                            <!-- Indicator will be here -->
+                        </div>
+                    </div>
+                    <div id="current-price" class="text-5xl font-extrabold text-slate-50 my-4">
+                        $0.00
+                    </div>
+                    <div class="text-xs text-slate-500">
+                        Last updated: <span id="last-updated">--:--:--</span>
+                    </div>
+                </div>
+
+                <!-- Alert Setup -->
+                <div class="bg-slate-800 p-4 rounded-lg shadow-lg">
+                    <h3 class="font-bold text-slate-200 mb-3">Set Price Alert</h3>
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <input type="number" id="alert-price-input" placeholder="e.g., 68500" class="flex-grow bg-slate-700 border border-slate-600 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-sky-500 placeholder-slate-500">
+                        <button id="set-alert-btn" class="bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 px-4 rounded-md transition-colors duration-300">Set Alert</button>
+                    </div>
+                     <button id="clear-alert-btn" class="hidden w-full mt-2 bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-4 rounded-md transition-colors duration-300">Clear Alert</button>
+                </div>
+
+            </div>
+
+            <!-- Right Column: Chart and Alerts -->
+            <div class="lg:col-span-2 flex flex-col gap-6">
+                
+                <!-- Chart -->
+                <div class="bg-slate-800 p-4 rounded-lg shadow-lg h-80 md:h-96">
+                    <canvas id="price-chart"></canvas>
+                </div>
+                
+                <!-- Alert Log -->
+                <div class="bg-slate-800 p-4 rounded-lg shadow-lg flex-grow">
+                     <h3 class="font-bold text-slate-200 mb-3 border-b border-slate-700 pb-2">Alerts Log</h3>
+                     <div id="alert-log" class="h-32 overflow-y-auto space-y-2">
+                         <p class="text-slate-500 text-sm text-center pt-4">No alerts triggered yet.</p>
+                     </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- DOM Element References ---
+            const assetSelect = document.getElementById('asset-select');
+            const currentPriceEl = document.getElementById('current-price');
+            const currentAssetNameEl = document.getElementById('current-asset-name');
+            const lastUpdatedEl = document.getElementById('last-updated');
+            const priceCard = document.getElementById('price-card');
+            const priceChangeIndicator = document.getElementById('price-change-indicator');
+            const chartCanvas = document.getElementById('price-chart');
+            const alertPriceInput = document.getElementById('alert-price-input');
+            const setAlertBtn = document.getElementById('set-alert-btn');
+            const clearAlertBtn = document.getElementById('clear-alert-btn');
+            const alertLog = document.getElementById('alert-log');
+
+            // --- State Variables ---
+            let chartInstance;
+            let currentAsset = 'BTC-USD';
+            let alertPrice = null;
+            let lastPrice = 0; // To track direction
+            const MAX_DATA_POINTS = 30; // Max points on the chart
+
+            // --- Mock Backend Data Store ---
+            // This object simulates a persistent backend data source.
+            const mockAssetData = {
+                'BTC-USD': { base: 68000, volatility: 0.001 },
+                'ETH-USD': { base: 3500, volatility: 0.0015 },
+                'AAPL': { base: 190, volatility: 0.002 },
+                'GOOGL': { base: 175, volatility: 0.0018 },
+                'XAU-USD': { base: 2300, volatility: 0.0005 },
+                'WTI-USD': { base: 80, volatility: 0.0025 }
+            };
+            
+            // --- MOCK BACKEND API ---
+            // This function simulates fetching data from a Python/FastAPI backend.
+            // In a real app, this would be a `fetch('/api/price/...')` call.
+            function fetchMockPrice(assetId) {
+                const asset = mockAssetData[assetId];
+                if (!asset.currentPrice) {
+                    asset.currentPrice = asset.base; // Initialize price
+                }
+                
+                // Generate a realistic random price fluctuation
+                const changePercent = (Math.random() - 0.49) * asset.volatility;
+                const change = asset.currentPrice * changePercent;
+                asset.currentPrice += change;
+
+                return {
+                    assetId: assetId,
+                    price: asset.currentPrice,
+                    timestamp: new Date()
+                };
+            }
+
+            // --- Chart.js Initialization ---
+            function initializeChart() {
+                const ctx = chartCanvas.getContext('2d');
+                if (chartInstance) {
+                    chartInstance.destroy();
+                }
+                chartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Price',
+                            data: [],
+                            borderColor: '#38bdf8', // sky-400
+                            backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.4,
+                            fill: true,
+                            pointRadius: 0,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                ticks: { display: false },
+                                grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                            },
+                            y: {
+                                ticks: { 
+                                    color: '#94a3b8', // slate-400
+                                    callback: (value) => '$' + value.toFixed(2)
+                                },
+                                grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    label: (context) => `Price: $${context.parsed.y.toFixed(2)}`
+                                }
+                            }
+                        },
+                        animation: {
+                            duration: 200 // Smoother updates
+                        }
+                    }
+                });
+            }
+
+            // --- UI Update Functions ---
+            function updateUI(data) {
+                // Update Price Card
+                const price = data.price;
+                currentPriceEl.textContent = `$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                lastUpdatedEl.textContent = data.timestamp.toLocaleTimeString();
+
+                // Update Price Change Indicator
+                if (price > lastPrice) {
+                    priceChangeIndicator.textContent = '▲';
+                    priceChangeIndicator.className = 'px-2 py-1 text-sm font-semibold rounded text-green-400 bg-green-900/50';
+                    priceCard.style.borderColor = '#4ade80'; // green-400
+                } else if (price < lastPrice) {
+                    priceChangeIndicator.textContent = '▼';
+                    priceChangeIndicator.className = 'px-2 py-1 text-sm font-semibold rounded text-red-400 bg-red-900/50';
+                    priceCard.style.borderColor = '#f87171'; // red-400
+                } else {
+                     priceChangeIndicator.textContent = '-';
+                     priceChangeIndicator.className = 'px-2 py-1 text-sm font-semibold rounded text-slate-400 bg-slate-700';
+                     priceCard.style.borderColor = 'transparent';
+                }
+                
+                // Update chart
+                updateChart(data.timestamp.toLocaleTimeString(), price);
+
+                // Check for alerts
+                checkAlert(price);
+
+                lastPrice = price; // Store price for next comparison
+            }
+
+            function updateChart(label, data) {
+                chartInstance.data.labels.push(label);
+                chartInstance.data.datasets[0].data.push(data);
+
+                if (chartInstance.data.labels.length > MAX_DATA_POINTS) {
+                    chartInstance.data.labels.shift();
+                    chartInstance.data.datasets[0].data.shift();
+                }
+                chartInstance.update();
+            }
+            
+            function resetUIForNewAsset() {
+                // Clear chart data
+                chartInstance.data.labels = [];
+                chartInstance.data.datasets[0].data = [];
+                chartInstance.update();
+
+                // Reset last price to avoid a large initial jump indicator
+                lastPrice = 0; 
+                
+                // Update asset name in UI
+                currentAssetNameEl.textContent = assetSelect.options[assetSelect.selectedIndex].text;
+
+                // Fetch initial data immediately
+                const initialData = fetchMockPrice(currentAsset);
+                lastPrice = initialData.price; // Set initial price
+                updateUI(initialData);
+            }
+
+            // --- Alert Logic ---
+            function setAlert() {
+                const price = parseFloat(alertPriceInput.value);
+                if (!isNaN(price) && price > 0) {
+                    alertPrice = price;
+                    addAlertMessage(`Alert set for ${currentAsset} at $${price.toLocaleString()}`, 'info');
+                    setAlertBtn.classList.add('hidden');
+                    clearAlertBtn.classList.remove('hidden');
+                    clearAlertBtn.textContent = `Clear Alert ($${price.toLocaleString()})`;
+                    alertPriceInput.disabled = true;
+                } else {
+                    addAlertMessage('Please enter a valid price.', 'error');
+                }
+            }
+
+            function clearAlert() {
+                addAlertMessage(`Alert for ${currentAsset} cleared.`, 'info');
+                alertPrice = null;
+                alertPriceInput.value = '';
+                alertPriceInput.disabled = false;
+                setAlertBtn.classList.remove('hidden');
+                clearAlertBtn.classList.add('hidden');
+            }
+
+            function checkAlert(currentPrice) {
+                if (alertPrice === null) return;
+
+                // Trigger if price crosses the alert threshold
+                if ((lastPrice < alertPrice && currentPrice >= alertPrice) || 
+                    (lastPrice > alertPrice && currentPrice <= alertPrice)) {
+                    triggerAlert(currentPrice);
+                }
+            }
+
+            function triggerAlert(price) {
+                const message = `${currentAsset} crossed your alert price! Current: $${price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                addAlertMessage(message, 'alert');
+                
+                // Play a sound
+                if (window.Tone) {
+                    const synth = new Tone.Synth().toDestination();
+                    synth.triggerAttackRelease("C5", "8n");
+                }
+                
+                // Flash the price card
+                priceCard.classList.add('alert-flash');
+                setTimeout(() => priceCard.classList.remove('alert-flash'), 1500);
+
+                // Clear the alert so it doesn't fire again
+                clearAlert();
+            }
+
+            function addAlertMessage(message, type = 'info') {
+                if (alertLog.querySelector('p')) {
+                    alertLog.innerHTML = ''; // Clear "No alerts" message
+                }
+
+                const logEntry = document.createElement('div');
+                const timestamp = new Date().toLocaleTimeString();
+                
+                let bgColor, textColor, icon;
+                if (type === 'alert') {
+                    bgColor = 'bg-red-500/20'; textColor = 'text-red-300'; icon = '🚨';
+                } else if (type === 'error') {
+                    bgColor = 'bg-yellow-500/20'; textColor = 'text-yellow-300'; icon = '⚠️';
+                } else {
+                    bgColor = 'bg-sky-500/20'; textColor = 'text-sky-300'; icon = 'ℹ️';
+                }
+
+                logEntry.className = `p-2 rounded-md text-sm ${bgColor} ${textColor} flex items-start gap-2`;
+                logEntry.innerHTML = `<span>${icon}</span><span class="flex-grow">${message}</span><span class="text-xs text-slate-500">${timestamp}</span>`;
+                
+                alertLog.prepend(logEntry);
+            }
+
+            // --- Event Listeners ---
+            assetSelect.addEventListener('change', (e) => {
+                currentAsset = e.target.value;
+                resetUIForNewAsset();
+                if(alertPrice) clearAlert(); // Clear alert when asset changes
+            });
+
+            setAlertBtn.addEventListener('click', setAlert);
+            clearAlertBtn.addEventListener('click', clearAlert);
+            alertPriceInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') setAlert();
+            });
+
+            // --- Main Application Loop ---
+            function startMonitoring() {
+                initializeChart();
+                resetUIForNewAsset();
+                
+                setInterval(() => {
+                    const data = fetchMockPrice(currentAsset);
+                    updateUI(data);
+                }, 2000); // Fetch new data every 2 seconds
+            }
+
+            startMonitoring();
+        });
+    </script>
+</body>
+</html>
